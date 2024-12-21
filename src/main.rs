@@ -1,9 +1,17 @@
+// Algorithms:
+// Original hill climbing variant: https://dspace.mit.edu/handle/1721.1/29168
+// Markov version:
+// https://gitlab.eclipse.org/eclipse/escet/escet/-/blob/develop/common/org.eclipse.escet.common.dsm/src/org/eclipse/escet/common/dsm/DsmClustering.java
+// Improved variant: https://www.researchgate.net/publication/267489785_Improved_Clustering_Algorithm_for_Design_Structure_Matrix
+
+// https://eclipse.dev/escet/tools/dsm-clustering.html#
+// implmenetation of above is on gitlab: https://gitlab.eclipse.org/eclipse/escet/escet
+// Matlab macros https://dsmweb.org/matlab-macro-for-clustering-dsms/
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
 mod clustering;
-mod dsm;
 mod io;
 
 /// Search for a pattern in a file and display the lines that contain it.
@@ -19,21 +27,14 @@ fn main() -> Result<()> {
     let content = io::read_csv(args.path.clone())
         .with_context(|| format!("failed to read csv file {:?}", args.path))?;
 
-    println!("file content: {:?}", content);
+    let result = clustering::cluster(&content, 1.0, 1000.0, 0.99);
 
-    let config = clustering::ClusteringConfig { pow_cc: 1.0 };
+    let (dsm, cost) = result.ok().unwrap();
 
-    let result = clustering::cluster(&content.data, config, 1000.0, 0.99);
+    println!("cost_history: {:?}", cost);
+    println!("dsm: {}", dsm);
 
-    let cost = result.ok().unwrap();
-
-    println!("cost: {:?}", cost);
-
-    // println!("cluster_matrix: {:?}", cluster_matrix);
-    // println!("cluster_size: {:?}", cluster_size);
-    // println!("total_coord_cost: {:?}", total_coord_cost);
-
-    // let _ = io::write_csv("out.csv", after_dsm);
+    io::write_csv("out.csv", dsm)?;
     // TODO:
     // - [ ] Write output to file
     // - [ ] Graph total cost history?
