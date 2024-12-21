@@ -159,11 +159,7 @@ impl Clustering {
         let mut new_matrix = self.matrix.clone();
         #[allow(clippy::needless_range_loop)]
         for i in 0..new_matrix.len() {
-            if i == cluster_idx {
-                new_matrix[i][element_idx] = true;
-            } else {
-                new_matrix[i][element_idx] = false;
-            }
+            new_matrix[i][element_idx] = i == cluster_idx;
         }
 
         Clustering { matrix: new_matrix }
@@ -189,7 +185,7 @@ impl Clustering {
                     && self.matrix[i]
                         .iter()
                         .zip(&self.matrix[j])
-                        .all(|(&a, &b)| (a != false && b != false) == (b != false))
+                        .all(|(&a, &b)| (a && b) == (b))
                 {
                     new_matrix[j] = vec![false; n_elements];
                 }
@@ -204,7 +200,7 @@ impl Clustering {
                     && self.matrix[i]
                         .iter()
                         .zip(&self.matrix[j])
-                        .all(|(&a, &b)| (a != false && b != false) == (a != false))
+                        .all(|(&a, &b)| (a && b) == (a))
                 {
                     new_matrix[i] = vec![false; n_elements];
                 }
@@ -214,7 +210,7 @@ impl Clustering {
         // Delete empty clusters
         let new_clustering = new_matrix
             .into_iter()
-            .filter(|row| row.iter().any(|&x| x != false))
+            .filter(|row| row.iter().any(|&x| x))
             .collect();
 
         Clustering {

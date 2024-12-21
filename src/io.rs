@@ -1,5 +1,6 @@
 use anyhow::Result;
 use csv::{ReaderBuilder, WriterBuilder};
+use plotters::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
@@ -60,5 +61,50 @@ pub fn write_csv<P: AsRef<Path>>(path: P, dsm: Dsm) -> Result<()> {
     }
 
     wtr.flush()?;
+    Ok(())
+}
+
+pub fn plot_cost<P: AsRef<Path>>(path: P, cost_history: Vec<f64>) -> Result<()> {
+    // To avoid the IO failure being ignored silently, we manually call the present function
+    // root.present().expect("Unable to write result to file, please make sure 'plotters-doc-data' dir exists under current dir");
+    let root_drawing_area = BitMapBackend::new("test.png", (1024, 768)).into_drawing_area();
+    root_drawing_area.fill(&WHITE).unwrap();
+
+    // get the maximum cost history value to set the y-axis range
+    let max_y = cost_history
+        .iter()
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+
+    let mut chart = ChartBuilder::on(&root_drawing_area)
+        .set_label_area_size(LabelAreaPosition::Left, 60)
+        .set_label_area_size(LabelAreaPosition::Bottom, 40)
+        .margin(10)
+        .caption("Cost History", ("sans-serif", 40))
+        .build_cartesian_2d(0f64..cost_history.len() as f64, 0f64..max_y.ceil() as f64)
+        .unwrap();
+
+    chart
+        .configure_mesh()
+        .y_desc("Coordination Cost")
+        .x_desc("Iteration")
+        .draw()
+        .unwrap();
+
+    chart
+        .draw_series(LineSeries::new(
+            cost_history.iter().enumerate().map(|(i, &y)| (i as f64, y)),
+            &RED,
+        ))
+        .unwrap();
+
+    Ok(())
+}
+
+pub fn plot_clustering<P: AsRef<Path>>(path: P, dsm: Dsm) -> Result<()> {
+    // Example here shows how it might work
+    // Divide grid into parts size of DSM, and color each part based on the value of the DSM
+    // Also need to add element labels to the x and y axis at different points
+    // https://github.com/plotters-rs/plotters/blob/master/plotters/examples/sierpinski.rs
     Ok(())
 }
