@@ -27,19 +27,17 @@ fn main() -> Result<()> {
         pow_bid: 1.0,
         pow_cc: 1.0,
         bid_prob: 0.25,
-        times: 100,
     };
 
-    let (after_dsm, cluster_matrix, cluster_size, total_coord_cost) =
-        clustering::cluster2(&content.data, config, 10000, 100.0, 0.99);
+    clustering::cluster(&content.data, config, 1000.0, 0.99)
 
-    println!("cluster_matrix: {:?}", cluster_matrix);
-    println!("cluster_size: {:?}", cluster_size);
-    println!("total_coord_cost: {:?}", total_coord_cost);
+    // println!("cluster_matrix: {:?}", cluster_matrix);
+    // println!("cluster_size: {:?}", cluster_size);
+    // println!("total_coord_cost: {:?}", total_coord_cost);
 
-    let content = io::write_csv("out.csv", after_dsm);
+    // let _ = io::write_csv("out.csv", after_dsm);
     // TODO:
     // - [ ] Write output to file
     // - [ ] Graph total cost history?
-    Ok(())
+    // Ok(())
 }
