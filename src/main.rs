@@ -25,10 +25,6 @@ enum Commands {
         #[arg(short, long, value_name = "OUTPUT.csv")]
         output: PathBuf,
 
-        /// Enable plotting
-        #[clap(long, short, action)]
-        plot: bool,
-
         /// The initial temperature of the simulated annealing algorithm
         #[arg(short, long, default_value = "1000.0")]
         temperature: f64,
@@ -42,13 +38,10 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // TODO: Run tests on a larger matrix
-    // TODO: Graph resulting DSM with clusters
     match &cli.command {
         Some(Commands::Cluster {
             input,
             output,
-            plot,
             temperature,
             rate,
         }) => {
@@ -59,12 +52,8 @@ fn main() -> Result<()> {
 
             let (dsm, cost_history) = result.ok().unwrap();
 
-            io::write_csv(output.clone(), dsm)?;
-
-            // TODO: Fix plot location
-            if *plot {
-                io::plot_cost(output.clone(), cost_history)?;
-            }
+            io::write_csv(output.with_extension("csv"), dsm.clone())?;
+            io::plot_cost(output.with_extension("png"), cost_history)?;
         }
         None => {}
     }

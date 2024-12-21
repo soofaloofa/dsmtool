@@ -1,4 +1,5 @@
 use anyhow::Result;
+use core::num;
 use rand::Rng;
 use std::{fmt, vec};
 
@@ -235,7 +236,13 @@ impl fmt::Display for Clustering {
     }
 }
 
-pub fn cluster(dsm: &Dsm, initial_temperature: f64, cooling_rate: f64) -> Result<(Dsm, Vec<f64>)> {
+pub type CostHistory = Vec<f64>;
+
+pub fn cluster(
+    dsm: &Dsm,
+    initial_temperature: f64,
+    cooling_rate: f64,
+) -> Result<(Dsm, CostHistory)> {
     let rng = &mut rand::thread_rng();
 
     let mut clustering = Clustering::new(dsm.len());
@@ -247,8 +254,9 @@ pub fn cluster(dsm: &Dsm, initial_temperature: f64, cooling_rate: f64) -> Result
     let mut best_coord_cost = curr_coord_cost;
     let mut best_clustering = clustering.clone();
 
-    let mut cost_history: Vec<f64> = vec![];
+    let mut cost_history: CostHistory = vec![];
     let mut temperature = initial_temperature;
+    let mut num_stable_iterations = 0;
     while temperature > 1e-3 {
         // Pick a random element from the DSM to put in a new cluster
         let element = rng.gen_range(0..dsm.len());
@@ -288,11 +296,24 @@ pub fn cluster(dsm: &Dsm, initial_temperature: f64, cooling_rate: f64) -> Result
         }
 
         temperature *= cooling_rate;
+
+        // // Check for stability
+        // if new_coord_cost - curr_coord_cost < 1e-6 {
+        //     println!(
+        //         "Stable solution found: {}/{}",
+        //         new_coord_cost, curr_coord_cost
+        //     );
+        //     num_stable_iterations += 1;
+        // }
+
+        // if num_stable_iterations > 100 {
+        //     break;
+        // }
     }
 
     // Delete empty or duplicate clusters
     let pruned_clustering = best_clustering.prune();
-    let ordered_dsm = dsm.reorder(pruned_clustering);
+    let ordered_dsm = dsm.reorder(pruned_clustering.clone());
 
     Ok((ordered_dsm, cost_history))
 }
