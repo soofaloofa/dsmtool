@@ -2,8 +2,7 @@
 // TODO: Standardize on ref/mut/clone ... when to use which?
 use anyhow::Result;
 use rand::Rng;
-use std::fmt;
-use std::vec;
+use std::{fmt, vec};
 
 /// `DSM` is a struct holding a matrix that represents a Design Structure Matrix
 /// (DSM). The DSM is a square matrix that represents the relationships or
@@ -37,6 +36,41 @@ impl Dsm {
     // Number of elements in the DSM
     pub fn len(&self) -> usize {
         self.labels.len()
+    }
+
+    // Function to reorder the DSM Matrix according to the Cluster matrix.
+    //
+    // Places all elements in the same cluster next to each other.  If an
+    // element is a member of more than one cluster, duplicate that element
+    // in the DSM for each time it appears in a cluster
+    //
+    // Does not modify the original DSM, returns a new copy
+    fn reorder(&self, clustering: Clustering) -> Dsm {
+        let mut ordered_dsm = vec![vec![0.0; self.len()]; self.len()];
+
+        // Find the new order of elements based on the clustering
+        let mut new_element_order: Vec<usize> = vec![];
+        for cluster in clustering.matrix.clone() {
+            for (i, &elmt) in cluster.iter().enumerate() {
+                if elmt > 0.0 {
+                    new_element_order.push(i);
+                }
+            }
+        }
+
+        for i in 0..ordered_dsm.len() {
+            for j in 0..ordered_dsm[i].len() {
+                ordered_dsm[i][j] = self.matrix[new_element_order[i]][new_element_order[j]];
+            }
+        }
+
+        Dsm {
+            labels: new_element_order
+                .iter()
+                .map(|&i| self.labels[i].clone())
+                .collect(),
+            matrix: ordered_dsm,
+        }
     }
 }
 
@@ -116,6 +150,76 @@ impl Clustering {
     pub fn sizes(&self) -> Vec<f64> {
         self.matrix.iter().map(|row| row.iter().sum()).collect()
     }
+
+    // Assign the element at the selected index to the selected cluster
+    //
+    // Does not modify original clustering, returns a new clustering
+    fn assign(&self, element_idx: usize, cluster_idx: usize) -> Clustering {
+        let mut new_matrix = self.matrix.clone();
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..new_matrix.len() {
+            if i == cluster_idx {
+                new_matrix[i][element_idx] = 1.0;
+            } else {
+                new_matrix[i][element_idx] = 0.0;
+            }
+        }
+
+        Clustering { matrix: new_matrix }
+    }
+
+    // Delete duplicate clusters or any clusters that are within clusters
+    //
+    // Does not modify original clustering, returns a new clustering
+    fn prune(&self) -> Clustering {
+        let n_clusters = self.cluster_count();
+        let n_elements = self.element_count();
+
+        let cluster_size = self.sizes();
+
+        let mut new_matrix = self.matrix.clone();
+
+        // If the clusters are equal or cluster j is completely contained in
+        // cluster i, delete cluster j
+        for i in 0..n_clusters {
+            for j in (i + 1)..n_clusters {
+                if cluster_size[i] >= cluster_size[j]
+                    && cluster_size[j] > 0.0
+                    && self.matrix[i]
+                        .iter()
+                        .zip(&self.matrix[j])
+                        .all(|(&a, &b)| (a != 0.0 && b != 0.0) == (b != 0.0))
+                {
+                    new_matrix[j] = vec![0.0; n_elements];
+                }
+            }
+        }
+
+        // If cluster i is completely contained in cluster j, delete cluster i
+        for i in 0..n_clusters {
+            for j in (i + 1)..n_clusters {
+                if cluster_size[i] < cluster_size[j]
+                    && cluster_size[i] > 0.0
+                    && self.matrix[i]
+                        .iter()
+                        .zip(&self.matrix[j])
+                        .all(|(&a, &b)| (a != 0.0 && b != 0.0) == (a != 0.0))
+                {
+                    new_matrix[i] = vec![0.0; n_elements];
+                }
+            }
+        }
+
+        // Delete empty clusters
+        let new_clustering = new_matrix
+            .into_iter()
+            .filter(|row| row.iter().any(|&x| x != 0.0))
+            .collect();
+
+        Clustering {
+            matrix: new_clustering,
+        }
+    }
 }
 
 impl fmt::Display for Clustering {
@@ -160,7 +264,7 @@ pub fn cluster(
         // Pick a random new cluster for the chosen element
         let cluster = rng.gen_range(0..clustering.cluster_count());
 
-        let new_clustering = move_element_to_cluster(&clustering, element, cluster);
+        let new_clustering = clustering.assign(element, cluster);
 
         // Calculate the coordination cost of the new cluster assignment
         let new_coord_cost = coord_cost(dsm, &new_clustering, pow_cc);
@@ -195,78 +299,10 @@ pub fn cluster(
     }
 
     // Delete empty or duplicate clusters
-    let new_clustering = prune_clusters(best_clustering);
-    let ordered_dsm = reorder_dsm(dsm, &new_clustering);
+    let pruned_clustering = best_clustering.prune();
+    let ordered_dsm = dsm.reorder(pruned_clustering);
 
-    // TODO: Keep labels with the DSM and re order them together
     Ok((ordered_dsm, cost_history))
-}
-
-// Update the cluster matrix by assigning the element at the selected index
-// to the selected cluster
-fn move_element_to_cluster(
-    clustering: &Clustering,
-    element_idx: usize,
-    cluster_idx: usize,
-) -> Clustering {
-    let mut new_clustering = clustering.clone();
-    for i in 0..clustering.cluster_count() {
-        if i == cluster_idx {
-            new_clustering.matrix[i][element_idx] = 1.0;
-        } else {
-            new_clustering.matrix[i][element_idx] = 0.0;
-        }
-    }
-
-    new_clustering
-}
-
-/// Delete duplicate clusters or any clusters that are within clusters
-fn prune_clusters(mut clustering: Clustering) -> Clustering {
-    let n_clusters = clustering.cluster_count();
-    let n_elements = clustering.element_count();
-
-    let cluster_size = clustering.sizes();
-    // If the clusters are equal or cluster j is completely contained in cluster i, delete cluster j
-    for i in 0..n_clusters {
-        for j in (i + 1)..n_clusters {
-            if cluster_size[i] >= cluster_size[j]
-                && cluster_size[j] > 0.0
-                && clustering.matrix[i]
-                    .iter()
-                    .zip(&clustering.matrix[j])
-                    .all(|(&a, &b)| (a != 0.0 && b != 0.0) == (b != 0.0))
-            {
-                clustering.matrix[j] = vec![0.0; n_elements];
-            }
-        }
-    }
-
-    // If cluster i is completely contained in cluster j, delete cluster i
-    for i in 0..n_clusters {
-        for j in (i + 1)..n_clusters {
-            if cluster_size[i] < cluster_size[j]
-                && cluster_size[i] > 0.0
-                && clustering.matrix[i]
-                    .iter()
-                    .zip(&clustering.matrix[j])
-                    .all(|(&a, &b)| (a != 0.0 && b != 0.0) == (a != 0.0))
-            {
-                clustering.matrix[i] = vec![0.0; n_elements];
-            }
-        }
-    }
-
-    // Delete empty clusters
-    let new_cluster_matrix = clustering
-        .matrix
-        .into_iter()
-        .filter(|row| row.iter().any(|&x| x != 0.0))
-        .collect();
-
-    Clustering {
-        matrix: new_cluster_matrix,
-    }
 }
 
 /// Function to calculate the coordination cost of the clustered matrix
@@ -323,43 +359,7 @@ fn coord_cost(dsm: &Dsm, clustering: &Clustering, pow_cc: f64) -> f64 {
     total_coord_cost
 }
 
-/// Function to reorder the DSM Matrix according to the Cluster matrix.
-///
-/// Places all elements in the same cluster next to each other.  If an
-/// element is a member of more than one cluster, duplicate that element
-/// in the DSM for each time it appears in a cluster
-///
-/// The new DSM will have all elements in a cluster next to each other
-fn reorder_dsm(dsm: &Dsm, clustering: &Clustering) -> Dsm {
-    let mut ordered_dsm = vec![vec![0.0; dsm.len()]; dsm.len()];
-
-    // Find the new order of elements based on the clustering
-    let mut new_element_order: Vec<usize> = vec![];
-    for cluster in clustering.matrix.clone() {
-        for (i, &elmt) in cluster.iter().enumerate() {
-            if elmt > 0.0 {
-                new_element_order.push(i);
-            }
-        }
-    }
-
-    for i in 0..ordered_dsm.len() {
-        for j in 0..ordered_dsm[i].len() {
-            ordered_dsm[i][j] = dsm.matrix[new_element_order[i]][new_element_order[j]];
-        }
-    }
-
-    Dsm {
-        labels: new_element_order
-            .iter()
-            .map(|&i| dsm.labels[i].clone())
-            .collect(),
-        matrix: ordered_dsm,
-    }
-}
-
 #[cfg(test)]
-
 mod tests {
     use super::*;
 
@@ -406,7 +406,7 @@ mod tests {
         };
 
         // Call the function
-        let new_dsm = reorder_dsm(&dsm, &clustering);
+        let new_dsm = dsm.reorder(clustering);
 
         // Check if the output matches the expected output
         assert_eq!(new_dsm, expected_dsm);
@@ -499,7 +499,7 @@ mod tests {
             matrix: cluster_matrix,
         };
 
-        let new_clustering = prune_clusters(clustering);
+        let new_clustering = clustering.prune();
 
         let expected_cluster_matrix = vec![
             vec![1.0, 0.0, 0.0],
@@ -524,7 +524,7 @@ mod tests {
             matrix: cluster_matrix,
         };
 
-        let new_clustering = prune_clusters(clustering);
+        let new_clustering = clustering.prune();
 
         let expected_cluster_matrix = vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]];
         let expected_clustering = Clustering {
@@ -545,7 +545,7 @@ mod tests {
             matrix: cluster_matrix,
         };
 
-        let new_clustering = prune_clusters(clustering);
+        let new_clustering = clustering.prune();
 
         let expected_cluster_matrix = vec![vec![1.0, 1.0, 0.0]];
         let expected_clustering = Clustering {
@@ -566,7 +566,7 @@ mod tests {
             matrix: cluster_matrix,
         };
 
-        let new_clustering = prune_clusters(clustering);
+        let new_clustering = clustering.prune();
 
         let expected_cluster_matrix = vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]];
         let expected_clustering = Clustering {
