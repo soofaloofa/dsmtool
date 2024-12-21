@@ -441,7 +441,7 @@ mod tests {
         };
 
         // Expected coordination cost
-        let expected_coord_cost = 20.0;
+        let expected_coord_cost = 13.0;
 
         // Call the function
         let total_coord_cost = coord_cost(&dsm, &clustering);

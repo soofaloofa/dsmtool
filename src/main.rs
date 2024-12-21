@@ -47,6 +47,10 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // TODO: Run tests on a larger matrix
+    // TODO: Run tests on a larger matrix
+    // TODO: Graph cost history
+    // TODO: Graph cost resulting DSM with clusters
     match &cli.command {
         Some(Commands::Cluster {
             input,
