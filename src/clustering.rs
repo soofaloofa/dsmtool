@@ -1,4 +1,3 @@
-// TODO: Standardize on anyhow::Result and thiserror
 use anyhow::Result;
 use rand::Rng;
 use std::{fmt, vec};
@@ -117,7 +116,8 @@ impl fmt::Display for Dsm {
 /// * Cluster 2 (second /// row): Contains elements 1 and 2.
 #[derive(Clone, Debug, PartialEq)]
 struct Clustering {
-    // TODO: Change these to be booleans, don't need to be floats
+    // TODO: Change these to be booleans, don't need to be floats and easier to
+    // understand
     matrix: Vec<Vec<f64>>,
 }
 

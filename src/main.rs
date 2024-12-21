@@ -54,17 +54,17 @@ fn main() -> Result<()> {
             temperature,
             cooling_rate,
         }) => {
-            let content = io::read_csv(input.clone())
+            let dsm = io::read_csv(input.clone())
                 .with_context(|| format!("failed to read csv file {:?}", input.clone()))?;
 
-            let result = clustering::cluster(&content, *temperature, *cooling_rate);
+            let result = clustering::cluster(&dsm, *temperature, *cooling_rate);
 
             let (dsm, cost) = result.ok().unwrap();
 
             println!("cost_history: {:?}", cost);
             println!("dsm: {}", dsm);
 
-            :write_csv(output.clone(), dsm)?;
+            io::write_csv(output.clone(), dsm)?;
         }
         None => {}
     }
