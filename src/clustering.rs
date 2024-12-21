@@ -1,5 +1,4 @@
 // TODO: Standardize on anyhow::Result and thiserror
-// TODO: Standardize on ref/mut/clone ... when to use which?
 use anyhow::Result;
 use rand::Rng;
 use std::{fmt, vec};
@@ -118,6 +117,7 @@ impl fmt::Display for Dsm {
 /// * Cluster 2 (second /// row): Contains elements 1 and 2.
 #[derive(Clone, Debug, PartialEq)]
 struct Clustering {
+    // TODO: Change these to be booleans, don't need to be floats
     matrix: Vec<Vec<f64>>,
 }
 
@@ -238,20 +238,15 @@ impl fmt::Display for Clustering {
     }
 }
 
-pub fn cluster(
-    dsm: &Dsm,
-    pow_cc: f64, // penalty assigned to cluster size during costing
-    initial_temperature: f64,
-    cooling_rate: f64,
-) -> Result<(Dsm, Vec<f64>)> {
+pub fn cluster(dsm: &Dsm, initial_temperature: f64, cooling_rate: f64) -> Result<(Dsm, Vec<f64>)> {
     let rng = &mut rand::thread_rng();
 
     let mut clustering = Clustering::new(dsm.len());
 
     // Calculate the initial starting coordination cost of the clustering
-    let mut curr_coord_cost = coord_cost(dsm, &clustering, pow_cc);
+    let mut curr_coord_cost = coord_cost(dsm, &clustering);
 
-    // Initialize the best solution to the current solution
+    // Initialize the best solution to the initial solution
     let mut best_coord_cost = curr_coord_cost;
     let mut best_clustering = clustering.clone();
 
@@ -267,7 +262,7 @@ pub fn cluster(
         let new_clustering = clustering.assign(element, cluster);
 
         // Calculate the coordination cost of the new cluster assignment
-        let new_coord_cost = coord_cost(dsm, &new_clustering, pow_cc);
+        let new_coord_cost = coord_cost(dsm, &new_clustering);
 
         // Accept the new cluster assignment if it has a
         // lower coord cost.  If the cost is higher, accept it with a
@@ -311,46 +306,54 @@ pub fn cluster(
 /// in one or more clusters, we add the cost of all intra-cluster interactions.
 /// If the interaction is not contained within any clusters, then a higher cost is
 /// assigned to the out-of-cluster interaction.
-fn coord_cost(dsm: &Dsm, clustering: &Clustering, pow_cc: f64) -> f64 {
-    // TODO: Calculate pow_cc as a percentage from the total DSM size
-    // i.e. all in same cluster -> 100% overhead, all in different clusters -> 0% overhead, then range in between
-
-    // Looking at all DSM interactions i and j,
-    // Are DSM(i) and DSM(j) both contained in the same cluster?
-    //  if yes: coordination cost is (DSM(i) + DSM(j))*cluster_size(cluster n)^pow_cc
-    //  if no: coordination cost is (DSM(i) + DSM(j))*DSM_size^pow_cc
-    // Total coordination cost is equal to the sum of all coordination costs
+fn coord_cost(dsm: &Dsm, clustering: &Clustering) -> f64 {
     let mut coordination_cost = vec![0.0; dsm.len()];
+
+    // Returns number of edges in a complete graph of size num_communicators
+    fn communication_cost(num_communicators: i32) -> i32 {
+        num_communicators * (num_communicators - 1) / 2
+    }
 
     let cluster_size = clustering.sizes();
 
     // Calculate the cost of the solution
+    // Looking at all DSM interactions i and j,
+    // Are DSM(i) and DSM(j) both contained in the same cluster?
+    //  if yes: coordination cost is based on cluster size
+    //  if no: coordination cost is based on DSM size
     #[allow(clippy::needless_range_loop)]
     for col in 0..dsm.len() {
         // Plus col+1 to avoid self-interactions (skips diagonals)
         for row in (col + 1)..dsm.len() {
             if dsm.matrix[col][row] > 0.0 || dsm.matrix[row][col] > 0.0 {
-                // There is an interaction between the two elements
-                let mut cost_total = 0.0;
-
                 // Check if any of the cluster assignments contain both elements
+                let mut same_cluster = false;
+                let mut num_communicators = 0;
                 for cluster_num in 0..clustering.cluster_count() {
                     if clustering.matrix[cluster_num][col] + clustering.matrix[cluster_num][row]
                         == 2.0
-                    // both elements are in the same cluster
                     {
-                        cost_total += (dsm.matrix[col][row] + dsm.matrix[row][col])
-                            * cluster_size[cluster_num].powf(pow_cc);
+                        // Both elements are in the same cluster, cost is weighted by size of cluster
+                        num_communicators = cluster_size[cluster_num] as i32;
+                        same_cluster = true;
+                        break;
+
+                        // ITGA formula
+                        // Both elements are in the same cluster, cost is weighted by size of cluster
+                        // cost_total = (dsm.matrix[col][row] + dsm.matrix[row][col])
+                        //     * cluster_size[cluster_num].powf(pow_cc);
                     }
                 }
 
-                let cost_c = if cost_total > 0.0 {
-                    cost_total
-                } else {
-                    (dsm.matrix[col][row] + dsm.matrix[row][col]) * (dsm.len() as f64).powf(pow_cc)
-                };
+                if !same_cluster {
+                    // No clusters contain both elements, cost is weighted by size of all elements
+                    num_communicators = dsm.len() as i32;
+                    // ITGA formula
+                    // cost_total = (dsm.matrix[col][row] + dsm.matrix[row][col])
+                    //     * (dsm.len() as f64).powf(pow_cc);
+                }
 
-                coordination_cost[col] += cost_c;
+                coordination_cost[col] += communication_cost(num_communicators) as f64;
             }
         }
     }
@@ -437,52 +440,11 @@ mod tests {
             matrix: cluster_matrix,
         };
 
-        // Weighting function
-        let pow_cc = 1.0;
-
         // Expected coordination cost
         let expected_coord_cost = 20.0;
 
         // Call the function
-        let total_coord_cost = coord_cost(&dsm, &clustering, pow_cc);
-
-        // Check if the output matches the expected output
-        assert_eq!(total_coord_cost, expected_coord_cost);
-    }
-
-    #[test]
-    fn test_coord_cost_with_different_weights() {
-        // Sample DSM matrix
-        let dsm_matrix = vec![
-            vec![0.0, 2.0, 0.0, 0.0],
-            vec![2.0, 0.0, 2.0, 0.0],
-            vec![0.0, 2.0, 0.0, 2.0],
-            vec![0.0, 0.0, 2.0, 0.0],
-        ];
-        let dsm = Dsm {
-            labels: vec![
-                "A".to_string(),
-                "B".to_string(),
-                "C".to_string(),
-                "D".to_string(),
-            ],
-            matrix: dsm_matrix,
-        };
-
-        // Sample cluster matrix
-        let cluster_matrix = vec![vec![1.0, 0.0, 0.0, 1.0], vec![0.0, 1.0, 1.0, 0.0]];
-        let clustering = Clustering {
-            matrix: cluster_matrix,
-        };
-
-        // Weighting function
-        let pow_cc = 2.0;
-
-        // Expected coordination cost
-        let expected_coord_cost = 144.0;
-
-        // Call the function
-        let total_coord_cost = coord_cost(&dsm, &clustering, pow_cc);
+        let total_coord_cost = coord_cost(&dsm, &clustering);
 
         // Check if the output matches the expected output
         assert_eq!(total_coord_cost, expected_coord_cost);

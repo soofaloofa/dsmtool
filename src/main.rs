@@ -27,7 +27,7 @@ fn main() -> Result<()> {
     let content = io::read_csv(args.path.clone())
         .with_context(|| format!("failed to read csv file {:?}", args.path))?;
 
-    let result = clustering::cluster(&content, 1.0, 1000.0, 0.99);
+    let result = clustering::cluster(&content, 1000.0, 0.99);
 
     let (dsm, cost) = result.ok().unwrap();
 
