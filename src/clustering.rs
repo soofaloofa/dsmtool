@@ -50,7 +50,7 @@ impl Dsm {
         let mut new_element_order: Vec<usize> = vec![];
         for cluster in clustering.matrix.clone() {
             for (i, &elmt) in cluster.iter().enumerate() {
-                if elmt > 0.0 {
+                if elmt {
                     new_element_order.push(i);
                 }
             }
@@ -105,8 +105,8 @@ impl fmt::Display for Dsm {
 ///
 /// ```
 /// let cluster_matrix = vec![
-///     vec![1.0, 0.0, 0.0, 1.0], // Cluster 1
-///     vec![0.0, 1.0, 1.0, 0.0], // Cluster 2
+///     vec![true, false, false, true], // Cluster 1
+///     vec![false, true, true, false], // Cluster 2
 /// ];
 /// ```
 ///
@@ -116,19 +116,17 @@ impl fmt::Display for Dsm {
 /// * Cluster 2 (second /// row): Contains elements 1 and 2.
 #[derive(Clone, Debug, PartialEq)]
 struct Clustering {
-    // TODO: Change these to be booleans, don't need to be floats and easier to
-    // understand
-    matrix: Vec<Vec<f64>>,
+    matrix: Vec<Vec<bool>>,
 }
 
 impl Clustering {
     // Initial cluster matrix sets each element to its own cluster
     pub fn new(num_elements: usize) -> Self {
         // Set the cluster matrix to a diagonal matrix along the axis
-        let matrix: Vec<Vec<f64>> = (0..num_elements)
+        let matrix: Vec<Vec<bool>> = (0..num_elements)
             .map(|i| {
-                let mut row = vec![0.0; num_elements];
-                row[i] = 1.0;
+                let mut row = vec![false; num_elements];
+                row[i] = true;
                 row
             })
             .collect();
@@ -147,8 +145,11 @@ impl Clustering {
     }
 
     // Returns an array where the nth element holds the size of cluster n.
-    pub fn sizes(&self) -> Vec<f64> {
-        self.matrix.iter().map(|row| row.iter().sum()).collect()
+    pub fn sizes(&self) -> Vec<usize> {
+        self.matrix
+            .iter()
+            .map(|row| row.iter().filter(|&&x| x).count())
+            .collect()
     }
 
     // Assign the element at the selected index to the selected cluster
@@ -159,9 +160,9 @@ impl Clustering {
         #[allow(clippy::needless_range_loop)]
         for i in 0..new_matrix.len() {
             if i == cluster_idx {
-                new_matrix[i][element_idx] = 1.0;
+                new_matrix[i][element_idx] = true;
             } else {
-                new_matrix[i][element_idx] = 0.0;
+                new_matrix[i][element_idx] = false;
             }
         }
 
@@ -184,13 +185,13 @@ impl Clustering {
         for i in 0..n_clusters {
             for j in (i + 1)..n_clusters {
                 if cluster_size[i] >= cluster_size[j]
-                    && cluster_size[j] > 0.0
+                    && cluster_size[j] > 0
                     && self.matrix[i]
                         .iter()
                         .zip(&self.matrix[j])
-                        .all(|(&a, &b)| (a != 0.0 && b != 0.0) == (b != 0.0))
+                        .all(|(&a, &b)| (a != false && b != false) == (b != false))
                 {
-                    new_matrix[j] = vec![0.0; n_elements];
+                    new_matrix[j] = vec![false; n_elements];
                 }
             }
         }
@@ -199,13 +200,13 @@ impl Clustering {
         for i in 0..n_clusters {
             for j in (i + 1)..n_clusters {
                 if cluster_size[i] < cluster_size[j]
-                    && cluster_size[i] > 0.0
+                    && cluster_size[i] > 0
                     && self.matrix[i]
                         .iter()
                         .zip(&self.matrix[j])
-                        .all(|(&a, &b)| (a != 0.0 && b != 0.0) == (a != 0.0))
+                        .all(|(&a, &b)| (a != false && b != false) == (a != false))
                 {
-                    new_matrix[i] = vec![0.0; n_elements];
+                    new_matrix[i] = vec![false; n_elements];
                 }
             }
         }
@@ -213,7 +214,7 @@ impl Clustering {
         // Delete empty clusters
         let new_clustering = new_matrix
             .into_iter()
-            .filter(|row| row.iter().any(|&x| x != 0.0))
+            .filter(|row| row.iter().any(|&x| x != false))
             .collect();
 
         Clustering {
@@ -330,9 +331,7 @@ fn coord_cost(dsm: &Dsm, clustering: &Clustering) -> f64 {
                 let mut same_cluster = false;
                 let mut num_communicators = 0;
                 for cluster_num in 0..clustering.cluster_count() {
-                    if clustering.matrix[cluster_num][col] + clustering.matrix[cluster_num][row]
-                        == 2.0
-                    {
+                    if clustering.matrix[cluster_num][col] && clustering.matrix[cluster_num][row] {
                         // Both elements are in the same cluster, cost is weighted by size of cluster
                         num_communicators = cluster_size[cluster_num] as i32;
                         same_cluster = true;
@@ -386,7 +385,10 @@ mod tests {
         };
 
         // Sample cluster matrix
-        let cluster_matrix = vec![vec![1.0, 0.0, 0.0, 1.0], vec![0.0, 1.0, 1.0, 0.0]];
+        let cluster_matrix = vec![
+            vec![true, false, false, true],
+            vec![false, true, true, false],
+        ];
         let clustering = Clustering {
             matrix: cluster_matrix,
         };
@@ -435,7 +437,10 @@ mod tests {
         };
 
         // Sample cluster matrix
-        let cluster_matrix = vec![vec![1.0, 0.0, 0.0, 1.0], vec![0.0, 1.0, 1.0, 0.0]];
+        let cluster_matrix = vec![
+            vec![true, false, false, true],
+            vec![false, true, true, false],
+        ];
         let clustering = Clustering {
             matrix: cluster_matrix,
         };
@@ -453,9 +458,9 @@ mod tests {
     #[test]
     fn test_delete_clusters_basic() {
         let cluster_matrix = vec![
-            vec![1.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0],
-            vec![0.0, 0.0, 1.0],
+            vec![true, false, false],
+            vec![false, true, false],
+            vec![false, false, true],
         ];
         let clustering = Clustering {
             matrix: cluster_matrix,
@@ -464,9 +469,9 @@ mod tests {
         let new_clustering = clustering.prune();
 
         let expected_cluster_matrix = vec![
-            vec![1.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0],
-            vec![0.0, 0.0, 1.0],
+            vec![true, false, false],
+            vec![false, true, false],
+            vec![false, false, true],
         ];
         let expected_clustering = Clustering {
             matrix: expected_cluster_matrix,
@@ -478,9 +483,9 @@ mod tests {
     #[test]
     fn test_delete_clusters_with_duplicates() {
         let cluster_matrix = vec![
-            vec![1.0, 0.0, 0.0],
-            vec![1.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0],
+            vec![true, false, false],
+            vec![true, false, false],
+            vec![false, true, false],
         ];
         let clustering = Clustering {
             matrix: cluster_matrix,
@@ -488,7 +493,7 @@ mod tests {
 
         let new_clustering = clustering.prune();
 
-        let expected_cluster_matrix = vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]];
+        let expected_cluster_matrix = vec![vec![true, false, false], vec![false, true, false]];
         let expected_clustering = Clustering {
             matrix: expected_cluster_matrix,
         };
@@ -499,9 +504,9 @@ mod tests {
     #[test]
     fn test_delete_clusters_with_contained_clusters() {
         let cluster_matrix = vec![
-            vec![1.0, 1.0, 0.0],
-            vec![1.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0],
+            vec![true, true, false],
+            vec![true, false, false],
+            vec![false, true, false],
         ];
         let clustering = Clustering {
             matrix: cluster_matrix,
@@ -509,7 +514,7 @@ mod tests {
 
         let new_clustering = clustering.prune();
 
-        let expected_cluster_matrix = vec![vec![1.0, 1.0, 0.0]];
+        let expected_cluster_matrix = vec![vec![true, true, false]];
         let expected_clustering = Clustering {
             matrix: expected_cluster_matrix,
         };
@@ -520,9 +525,9 @@ mod tests {
     #[test]
     fn test_delete_clusters_with_empty_clusters() {
         let cluster_matrix = vec![
-            vec![1.0, 0.0, 0.0],
-            vec![0.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0],
+            vec![true, false, false],
+            vec![false, false, false],
+            vec![false, true, false],
         ];
         let clustering = Clustering {
             matrix: cluster_matrix,
@@ -530,7 +535,7 @@ mod tests {
 
         let new_clustering = clustering.prune();
 
-        let expected_cluster_matrix = vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]];
+        let expected_cluster_matrix = vec![vec![true, false, false], vec![false, true, false]];
         let expected_clustering = Clustering {
             matrix: expected_cluster_matrix,
         };
