@@ -55,11 +55,7 @@ type ClusterSize = Vec<f64>;
 
 #[derive(Debug, Default, Clone)]
 pub struct ClusteringConfig {
-    pub pow_cc: f64,             // penalty assigned to cluster size during costing
-    pub pow_bid: f64,            // penalty assigned to cluster size during bidding
-    pub pow_dep: f64,            // emphasizes high interactions
-    pub max_cluster_size: usize, // max size of any one cluster
-    pub bid_prob: f64,           // probability between 0 and 1 of accepting second highest bid
+    pub pow_cc: f64, // penalty assigned to cluster size during costing
 }
 
 pub fn cluster(
@@ -67,7 +63,7 @@ pub fn cluster(
     config: ClusteringConfig,
     initial_temperature: f64,
     cooling_rate: f64,
-) -> Result<()> {
+) -> Result<Vec<f64>> {
     println!("dsm_matrix: ");
     pprint_matrix(dsm_matrix);
     let rng = &mut rand::thread_rng();
@@ -88,74 +84,52 @@ pub fn cluster(
 
     let mut temperature = initial_temperature;
 
-    // TODO: record solution costs found over time so we can see the progression
+    let mut solution_costs: Vec<f64> = vec![];
+
     let mut num_iterations = 0;
     while temperature > 1e-3 {
         // Pick a random element from the DSM to put in a new cluster
         let elmt = rng.gen_range(0..dsm_matrix.len());
 
-        // Accept bids for the element from all clusters
-        // cluster_bid[i] holds the bid made by cluster i in cluster_matrix
-        // based on the bidding parameters
-        let cluster_bid = bid(
-            elmt,
+        // Pick a random cluster to assign the element to
+        let cluster = rng.gen_range(0..cluster_matrix.len());
+
+        let (new_cluster_matrix, new_cluster_size) =
+            assign_element_to_cluster(&cluster_matrix, cluster, elmt);
+
+        // Calculate the new coordination cost with the updated element
+        let new_coord_cost = coord_cost(
             dsm_matrix,
-            &cluster_matrix,
-            cluster_size.clone(),
-            config.clone(),
+            &new_cluster_matrix,
+            &new_cluster_size,
+            config.pow_cc,
         );
 
-        // Select the cluster with the best bid
-        // TODO
-        // Randomly select a different bid sometimes like before.
-        // Could sort the bids and randomly pick from top third?
-        //
-        // Or just select any cluster randomly and skip the bidding process altogether,
-        // letting annealing and the coord_cost function figure it out?
-        // END TODO
-        let (selected_bid_index, selected_bid) = cluster_bid
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.total_cmp(b))
-            .unwrap();
+        // Accept the new cluster assignment if it has a
+        // lower coord cost.  If the cost is higher, accept it with a
+        // probability determined by the annealing temperature
+        // Initially, we have a high likelihood of accepting worse solutions
+        let accept = if new_coord_cost <= curr_coord_cost {
+            true
+        } else {
+            let acceptance_probability = ((curr_coord_cost - new_coord_cost) / temperature).exp();
+            rng.gen_bool(acceptance_probability)
+        };
 
-        if *selected_bid > 0.0 {
-            let (new_cluster_matrix, new_cluster_size) =
-                assign_element_to_cluster(&cluster_matrix, selected_bid_index, elmt);
+        if accept {
+            // Update the cluster with the accepted values
+            curr_coord_cost = new_coord_cost;
+            cluster_matrix = new_cluster_matrix;
+            cluster_size = new_cluster_size;
 
-            // Calculate the coordination cost of the new cluster matrix with
-            // the element assigned
-            let new_coord_cost = coord_cost(
-                dsm_matrix,
-                &new_cluster_matrix,
-                &new_cluster_size,
-                config.pow_cc,
-            );
+            // Record the solution cost
+            solution_costs.push(curr_coord_cost);
 
-            // Accept the new cluster assignment if it has a
-            // lower coord cost.  If the cost is higher, accept it with a
-            // probability determined by the annealing temperature
-            // Initially, we have a high likelihood of accepting worse solutions
-            let accept = if new_coord_cost <= curr_coord_cost {
-                true
-            } else {
-                let acceptance_probability =
-                    ((curr_coord_cost - new_coord_cost) / temperature).exp();
-                rng.gen_bool(acceptance_probability)
-            };
-
-            if accept {
-                // Update the cluster with the accepted values
-                curr_coord_cost = new_coord_cost;
-                cluster_matrix = new_cluster_matrix;
-                cluster_size = new_cluster_size;
-
-                // If we have a new best, update it
-                if curr_coord_cost < best_coord_cost {
-                    best_coord_cost = curr_coord_cost;
-                    best_cluster_matrix = cluster_matrix.clone();
-                    best_cluster_size = cluster_size.clone();
-                }
+            // If we have a new best, update it
+            if curr_coord_cost < best_coord_cost {
+                best_coord_cost = curr_coord_cost;
+                best_cluster_matrix = cluster_matrix.clone();
+                best_cluster_size = cluster_size.clone();
             }
         }
 
@@ -181,7 +155,7 @@ pub fn cluster(
 
     // TODO: Keep labels with the DSM and re order them together
     println!("num_iterations: {:?}", num_iterations);
-    Ok(())
+    Ok(solution_costs)
 }
 
 // Helper function for debugging purposes
@@ -238,7 +212,9 @@ fn bid(
     dsm_matrix: &Vec<Vec<f64>>,
     cluster_matrix: &Vec<Vec<f64>>,
     cluster_size: Vec<f64>,
-    config: ClusteringConfig,
+    max_cluster_size: usize,
+    pow_dep: f64,
+    pow_bid: f64,
 ) -> Vec<f64> {
     // Initilize all bids to 0
     let mut cluster_bid = vec![0.0; cluster_matrix.len()];
@@ -248,14 +224,13 @@ fn bid(
     // selected element.  Then use the number of interactions to calculate the
     // bid.
     for i in 0..cluster_matrix.len() {
-        if (cluster_size[i] < config.max_cluster_size as f64) && cluster_size[i] > 0.0 {
+        if (cluster_size[i] < max_cluster_size as f64) && cluster_size[i] > 0.0 {
             let sum_dsm_cluster: f64 = dsm_matrix[elmt]
                 .iter()
                 .zip(&cluster_matrix[i])
                 .map(|(dsm, cluster)| dsm * cluster)
                 .sum();
-            cluster_bid[i] =
-                (sum_dsm_cluster.powf(config.pow_dep)) / (cluster_size[i].powf(config.pow_bid));
+            cluster_bid[i] = (sum_dsm_cluster.powf(pow_dep)) / (cluster_size[i].powf(pow_bid));
         } else {
             cluster_bid[i] = 0.0;
         }
@@ -377,38 +352,25 @@ fn coord_cost(
 /// in the DSM for each time it appears in a cluster
 ///
 /// The new DSM will have all elements in a cluster next to each other
-///
-/// TODO: This doesn't work right now
 fn reorder_dsm_by_cluster(
     dsm_matrix: &Vec<Vec<f64>>,
     cluster_matrix: &Vec<Vec<f64>>,
 ) -> Vec<Vec<f64>> {
     let mut ordered_dsm = vec![vec![0.0; dsm_matrix.len()]; dsm_matrix.len()];
 
-    let mut ordered_idx = 0;
-
+    // Find the new order of elements based on the clustering
+    let mut new_element_order: Vec<usize> = vec![];
     for cluster in cluster_matrix {
-        // Find the elements that belong to this cluster
-        let mut cluster_elements: Vec<usize> = vec![];
         for (i, &elmt) in cluster.iter().enumerate() {
             if elmt > 0.0 {
-                cluster_elements.push(i);
+                new_element_order.push(i);
             }
         }
+    }
 
-        // Place the elements in the ordered DSM by cluster order
-        for elmt_idx in cluster_elements {
-            // Copy the column at elmt_idx to the correct column of the ordered DSM
-            for row in 0..dsm_matrix.len() {
-                ordered_dsm[row][ordered_idx] = dsm_matrix[row][elmt_idx];
-            }
-
-            // // Copy the row at elmt_idx to the correct row of the ordered DSM
-            // for col in 0..dsm_matrix.len() {
-            //     ordered_dsm[ordered_idx][col] = dsm_matrix[elmt_idx][col];
-            // }
-
-            ordered_idx += 1;
+    for i in 0..ordered_dsm.len() {
+        for j in 0..ordered_dsm[i].len() {
+            ordered_dsm[i][j] = dsm_matrix[new_element_order[i]][new_element_order[j]];
         }
     }
 
@@ -444,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reorder_symmetric_dsm_by_cluster() {
+    fn test_reorder_dsm_by_cluster() {
         // Sample DSM matrix
         let dsm_matrix = vec![
             vec![0.0, 1.0, 0.0, 0.0],
@@ -459,35 +421,9 @@ mod tests {
         // Expected reordered DSM matrix
         let expected_new_dsm_matrix = vec![
             vec![0.0, 0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 1.0],
             vec![0.0, 1.0, 1.0, 0.0],
-            vec![0.0, 0.0, 0.0, 1.0],
-        ];
-
-        // Call the function
-        let new_dsm_matrix = reorder_dsm_by_cluster(&dsm_matrix, &cluster_matrix);
-
-        // Check if the output matches the expected output
-        assert_eq!(new_dsm_matrix, expected_new_dsm_matrix);
-    }
-
-    #[test]
-    fn test_reorder_asymmetric_dsm_by_cluster() {
-        // Sample DSM matrix
-        let dsm_matrix = vec![
-            vec![1.0, 0.0, 0.0],
-            vec![1.0, 1.0, 1.0],
-            vec![0.0, 1.0, 1.0],
-        ];
-
-        // Sample cluster matrix
-        let cluster_matrix = vec![vec![1.0, 0.0, 1.0], vec![0.0, 1.0, 0.0]];
-
-        // Expected reordered DSM matrix
-        let expected_new_dsm_matrix = vec![
-            vec![1.0, 0.0, 0.0],
-            vec![1.0, 1.0, 0.0],
-            vec![0.0, 1.0, 1.0],
         ];
 
         // Call the function
@@ -571,29 +507,13 @@ mod tests {
         // Sample cluster size
         let cluster_size = vec![2.0, 2.0];
 
-        let config = ClusteringConfig {
-            max_cluster_size: 4,
-            pow_dep: 1.0,
-            pow_bid: 1.0,
-            pow_cc: 0.0,
-            bid_prob: 0.25,
-        };
-
-        let result = bid(1, &dsm_matrix, &cluster_matrix, cluster_size, config);
+        let result = bid(1, &dsm_matrix, &cluster_matrix, cluster_size, 4, 1.0, 1.0);
         let expected = vec![0.5, 0.5];
         assert_eq!(result, expected);
     }
 
     #[test]
     fn test_bid_with_empty_cluster() {
-        let config = ClusteringConfig {
-            max_cluster_size: 2,
-            pow_dep: 1.0,
-            pow_bid: 1.0,
-            pow_cc: 1.0,
-            bid_prob: 10.0,
-        };
-
         // Sample DSM matrix
         let dsm_matrix = vec![
             vec![0.0, 1.0, 0.0, 0.0],
@@ -613,7 +533,7 @@ mod tests {
         // Sample cluster size
         let cluster_size = vec![1.0, 2.0, 2.0, 0.0];
 
-        let result = bid(1, &dsm_matrix, &cluster_matrix, cluster_size, config);
+        let result = bid(1, &dsm_matrix, &cluster_matrix, cluster_size, 2, 1.0, 1.0);
         let expected = vec![1.0, 0.0, 0.0, 0.0];
         assert_eq!(result, expected);
     }
@@ -634,16 +554,7 @@ mod tests {
         // Sample cluster size
         let cluster_size = vec![2.0, 2.0];
 
-        // clusters are over max size so don't bid
-        let config = ClusteringConfig {
-            max_cluster_size: 1,
-            pow_dep: 1.0,
-            pow_bid: 1.0,
-            pow_cc: 0.0,
-            bid_prob: 0.25,
-        };
-
-        let result = bid(1, &dsm_matrix, &cluster_matrix, cluster_size, config);
+        let result = bid(1, &dsm_matrix, &cluster_matrix, cluster_size, 1, 1.0, 1.0);
         let expected = vec![0.0, 0.0];
         assert_eq!(result, expected);
     }
@@ -661,15 +572,8 @@ mod tests {
             vec![0.0, 0.0, 1.0],
         ];
         let cluster_size = vec![1.0, 1.0, 1.0];
-        let config = ClusteringConfig {
-            max_cluster_size: 2,
-            pow_dep: 2.0,
-            pow_bid: 0.5,
-            pow_cc: 0.0,
-            bid_prob: 0.25,
-        };
 
-        let result = bid(1, &dsm_matrix, &cluster_matrix, cluster_size, config);
+        let result = bid(1, &dsm_matrix, &cluster_matrix, cluster_size, 2, 2.0, 0.5);
         let expected = vec![1.0, 0.0, 1.0];
         assert_eq!(result, expected);
     }

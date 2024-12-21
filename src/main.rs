@@ -21,15 +21,13 @@ fn main() -> Result<()> {
 
     println!("file content: {:?}", content);
 
-    let config = clustering::ClusteringConfig {
-        max_cluster_size: 7,
-        pow_dep: 4.0,
-        pow_bid: 1.0,
-        pow_cc: 1.0,
-        bid_prob: 0.25,
-    };
+    let config = clustering::ClusteringConfig { pow_cc: 1.0 };
 
-    clustering::cluster(&content.data, config, 1000.0, 0.99)
+    let result = clustering::cluster(&content.data, config, 1000.0, 0.99);
+
+    let cost = result.ok().unwrap();
+
+    println!("cost: {:?}", cost);
 
     // println!("cluster_matrix: {:?}", cluster_matrix);
     // println!("cluster_size: {:?}", cluster_size);
@@ -40,4 +38,6 @@ fn main() -> Result<()> {
     // - [ ] Write output to file
     // - [ ] Graph total cost history?
     // Ok(())
+
+    Ok(())
 }
