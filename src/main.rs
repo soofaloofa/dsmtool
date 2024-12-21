@@ -8,37 +8,66 @@
 // implmenetation of above is on gitlab: https://gitlab.eclipse.org/eclipse/escet/escet
 // Matlab macros https://dsmweb.org/matlab-macro-for-clustering-dsms/
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 mod clustering;
 mod io;
 
-/// Search for a pattern in a file and display the lines that contain it.
+/// Tools for operating on Design Structure Matrices (DSMs)
 #[derive(Parser)]
+#[command(version, about, long_about = None)]
 struct Cli {
-    /// The path to the input CSV file to read
-    path: PathBuf,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Cluster the input CSV file
+    Cluster {
+        /// The path to the input CSV file to read
+        #[arg(short, long, value_name = "INPUT.csv")]
+        input: PathBuf,
+
+        /// The path to the output CSV file to write
+        #[arg(short, long, value_name = "OUTPUT.csv")]
+        output: PathBuf,
+
+        /// The initial temperature of the simulated annealing algorithm
+        #[arg(short, long, default_value = "1000.0")]
+        temperature: f64,
+
+        /// The cooling rate for the simulated annealing algorithm
+        #[arg(short, long, default_value = "0.99")]
+        cooling_rate: f64,
+    },
 }
 
 fn main() -> Result<()> {
-    let args = Cli::parse();
+    let cli = Cli::parse();
 
-    let content = io::read_csv(args.path.clone())
-        .with_context(|| format!("failed to read csv file {:?}", args.path))?;
+    match &cli.command {
+        Some(Commands::Cluster {
+            input,
+            output,
+            temperature,
+            cooling_rate,
+        }) => {
+            let content = io::read_csv(input.clone())
+                .with_context(|| format!("failed to read csv file {:?}", input.clone()))?;
 
-    let result = clustering::cluster(&content, 1000.0, 0.99);
+            let result = clustering::cluster(&content, *temperature, *cooling_rate);
 
-    let (dsm, cost) = result.ok().unwrap();
+            let (dsm, cost) = result.ok().unwrap();
 
-    println!("cost_history: {:?}", cost);
-    println!("dsm: {}", dsm);
+            println!("cost_history: {:?}", cost);
+            println!("dsm: {}", dsm);
 
-    io::write_csv("out.csv", dsm)?;
-    // TODO:
-    // - [ ] Write output to file
-    // - [ ] Graph total cost history?
-    // Ok(())
+            :write_csv(output.clone(), dsm)?;
+        }
+        None => {}
+    }
 
     Ok(())
 }

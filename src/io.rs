@@ -43,8 +43,8 @@ pub fn read_csv<P: AsRef<Path>>(path: P) -> Result<Dsm> {
     Ok(Dsm::new(labels, data))
 }
 
-pub fn write_csv(file_path: &str, dsm: Dsm) -> Result<()> {
-    let file = File::create(file_path)?;
+pub fn write_csv<P: AsRef<Path>>(path: P, dsm: Dsm) -> Result<()> {
+    let file = File::create(path)?;
     let mut wtr = WriterBuilder::new().from_writer(BufWriter::new(file));
 
     // Insert a blank first element in the header
