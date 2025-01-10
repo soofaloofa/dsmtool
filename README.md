@@ -60,6 +60,6 @@ G,0,1,1,1,0,0,1
 
 ## Reference Algorithms
 
-* Original hill climbing variant: https://dspace.mit.edu/handle/1721.1/29168
-* Improved hill climbing variant: https://www.researchgate.net/publication/267489785_Improved_Clustering_Algorithm_for_Design_Structure_Matrix
-* Markov version: https://gitlab.eclipse.org/eclipse/escet/escet/-/blob/develop/common/org.eclipse.escet.common.dsm/src/org/eclipse/escet/common/dsm/DsmClustering.java
+* [Original hill climbing variant](https://dspace.mit.edu/handle/1721.1/29168)
+* [Improved hill climbing variant](https://www.researchgate.net/publication/267489785_Improved_Clustering_Algorithm_for_Design_Structure_Matrix)
+* [Markov version](https://gitlab.eclipse.org/eclipse/escet/escet/-/blob/develop/common/org.eclipse.escet.common.dsm/src/org/eclipse/escet/common/dsm/DsmClustering.java)
