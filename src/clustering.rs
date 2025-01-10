@@ -1,5 +1,4 @@
 use anyhow::Result;
-use core::num;
 use rand::Rng;
 use std::{fmt, vec};
 
@@ -256,7 +255,6 @@ pub fn cluster(
 
     let mut cost_history: CostHistory = vec![];
     let mut temperature = initial_temperature;
-    let mut num_stable_iterations = 0;
     while temperature > 1e-3 {
         // Pick a random element from the DSM to put in a new cluster
         let element = rng.gen_range(0..dsm.len());
@@ -296,19 +294,6 @@ pub fn cluster(
         }
 
         temperature *= cooling_rate;
-
-        // // Check for stability
-        // if new_coord_cost - curr_coord_cost < 1e-6 {
-        //     println!(
-        //         "Stable solution found: {}/{}",
-        //         new_coord_cost, curr_coord_cost
-        //     );
-        //     num_stable_iterations += 1;
-        // }
-
-        // if num_stable_iterations > 100 {
-        //     break;
-        // }
     }
 
     // Delete empty or duplicate clusters

@@ -32,6 +32,10 @@ enum Commands {
         /// The cooling rate for the simulated annealing algorithm
         #[arg(short, long, default_value = "0.99")]
         rate: f64,
+
+        /// Turn cost history output on
+        #[arg(short, long, action = clap::ArgAction::SetTrue)]
+        cost: bool,
     },
 }
 
@@ -44,6 +48,7 @@ fn main() -> Result<()> {
             output,
             temperature,
             rate,
+            cost,
         }) => {
             let dsm = io::read_csv(input.clone())
                 .with_context(|| format!("failed to read csv file {:?}", input.clone()))?;
@@ -53,7 +58,9 @@ fn main() -> Result<()> {
             let (dsm, cost_history) = result.ok().unwrap();
 
             io::write_csv(output.with_extension("csv"), dsm.clone())?;
-            io::plot_cost(output.with_extension("png"), cost_history)?;
+            if *cost {
+                io::plot_cost("cost_history.png", cost_history)?;
+            }
         }
         None => {}
     }
